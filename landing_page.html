@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FocusOverlay — maximum blur management</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+/* 
+  AESTHETIC DIRECTION: Blur Everything + Cinematic Grain + Neon Leaks.
+  Cues: Deep depth-of-field, frosted glass, astigmatism, pulsating focus.
+*/
+
+:root {
+  --bg: #0A0A0A;
+  --surface: #171717;
+  --text: #F4F4F0;
+  --text-dim: #888888;
+  --red: #E52421; 
+  --red-alpha: rgba(229, 36, 33, 0.75);
+  --line: #333333;
+  
+  --font-sans: 'Archivo', "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --step--1: clamp(0.88rem, 0.85rem + 0.15vw, 1.00rem);
+  --step-0: clamp(1.00rem, 0.95rem + 0.25vw, 1.25rem);
+  --step-1: clamp(1.25rem, 1.15rem + 0.50vw, 1.75rem);
+  --step-2: clamp(1.56rem, 1.40rem + 0.80vw, 2.36rem);
+  --step-3: clamp(1.95rem, 1.70rem + 1.25vw, 3.20rem);
+  --step-4: clamp(2.44rem, 2.05rem + 1.95vw, 4.39rem);
+  --step-5: clamp(3.05rem, 2.45rem + 3.00vw, 6.05rem);
+  --step-6: clamp(3.81rem, 2.90rem + 4.55vw, 8.37rem);
+
+  --space-xs: clamp(0.50rem, 0.45rem + 0.25vw, 0.75rem);
+  --space-s: clamp(1.00rem, 0.90rem + 0.50vw, 1.50rem);
+  --space-m: clamp(1.50rem, 1.35rem + 0.75vw, 2.25rem);
+  --space-l: clamp(2.00rem, 1.80rem + 1.00vw, 3.00rem);
+  --space-xl: clamp(3.00rem, 2.70rem + 1.50vw, 4.50rem);
+  --space-2xl: clamp(4.00rem, 3.60rem + 2.00vw, 6.00rem);
+  --space-3xl: clamp(6.00rem, 5.40rem + 3.00vw, 9.00rem);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+* { margin: 0; padding: 0; }
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--step-0);
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* CINEMATIC FILM GRAIN */
+.noise-overlay {
+  position: fixed;
+  top: 0; left: 0; width: 100vw; height: 100vh;
+  pointer-events: none;
+  z-index: 9998;
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+}
+
+/* TOP RED LIGHT GLOW (Gradient Shootout) */
+.top-red-light {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 250px;
+  /* Shoots down smoothly using a gradient */
+  background: linear-gradient(180deg, rgba(229, 36, 33, 0.35) 0%, rgba(229, 36, 33, 0.05) 40%, transparent 100%);
+  pointer-events: none;
+  z-index: 9999;
+  border-top: 2px solid var(--red);
+  animation: breathingLight 5s infinite alternate ease-in-out;
+}
+
+/* The intensely blurred neon "tube" at the very top edge */
+.top-red-light::before {
+  content: '';
+  position: absolute;
+  top: -10px;
+  left: 0;
+  right: 0;
+  height: 20px;
+  background: var(--red);
+  filter: blur(15px);
+}
+
+@keyframes breathingLight {
+  0% { opacity: 0.7; }
+  100% { opacity: 1; }
+}
+
+/* MOUSE TRACKING ORB - Made much smaller */
+#cursor-blur {
+  position: fixed;
+  top: 50%; left: 50%;
+  width: 15vw; height: 15vw; /* Drastically reduced size */
+  background: var(--red);
+  border-radius: 50%;
+  filter: blur(70px); /* Tighter blur to match the smaller size */
+  opacity: 0; /* Starts hidden until mouse moves */
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: -1;
+  transition: opacity 1s ease;
+}
+
+h1, h2, h3, h4, p {
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+  text-wrap: balance;
+  transition: filter 0.4s ease;
+}
+
+h1 { font-size: var(--step-6); line-height: 1; font-weight: 900; }
+h2 { font-size: var(--step-4); }
+h3 { font-size: var(--step-2); }
+p { font-weight: 400; }
+
+h1:hover, h2:hover, h3:hover, p:hover {
+  filter: blur(3px);
+}
+
+.wrapper {
+  max-width: 1800px;
+  margin: 0 auto;
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  background: transparent;
+  min-height: 100vh;
+  position: relative;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  border-bottom: 1px solid var(--line);
+}
+
+.cell {
+  padding: var(--space-xl) var(--space-l);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+}
+.cell:last-child { border-right: none; }
+
+.col-12 { grid-column: span 12; }
+.col-8 { grid-column: span 12; }
+.col-6 { grid-column: span 12; }
+.col-4 { grid-column: span 12; }
+
+@media (min-width: 768px) {
+  .col-8 { grid-column: span 8; }
+  .col-6 { grid-column: span 6; }
+  .col-4 { grid-column: span 4; }
+}
+
+.dim { color: var(--text-dim); }
+.red { color: var(--red); }
+.mono { font-family: var(--font-mono); font-size: var(--step--1); letter-spacing: -0.02em; }
+.uppercase { text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; }
+
+@keyframes breathingBlur {
+  0% { filter: blur(0px); transform: scale(1); }
+  50% { filter: blur(8px); transform: scale(1.02); }
+  100% { filter: blur(0px); transform: scale(1); }
+}
+
+@keyframes voidBreathing {
+  0% { transform: translate(-50%, -50%) scale(0.85); filter: blur(60px); opacity: 0.15; }
+  100% { transform: translate(-50%, -50%) scale(1.15); filter: blur(100px); opacity: 0.4; }
+}
+
+.void-blur-orb {
+  position: absolute;
+  top: 60%; left: 50%; width: 70%; height: 60%;
+  background: var(--red); border-radius: 50%;
+  filter: blur(80px); opacity: 0.2;
+  transform: translate(-50%, -50%);
+  z-index: -1; pointer-events: none;
+  animation: voidBreathing 8s infinite alternate cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.running-number {
+  font-size: var(--step-5); font-weight: 900; color: var(--red);
+  line-height: 0.8; letter-spacing: -0.05em;
+  margin-bottom: var(--space-l); display: block;
+  animation: breathingBlur 4s infinite alternate ease-in-out;
+}
+
+@keyframes blurFadeIn {
+  0% { opacity: 0; transform: translateY(-10px); filter: blur(20px); }
+  100% { opacity: 1; transform: translateY(0); filter: blur(0px); }
+}
+
+/* STICKY FROSTED NAV */
+header.masthead {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: var(--space-m) var(--space-l);
+  border-bottom: 1px solid var(--line); font-weight: 500;
+  animation: blurFadeIn 1.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(10, 10, 10, 0.6);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+}
+
+button {
+  background: var(--text); color: var(--surface); border: none;
+  font-family: var(--font-sans); font-weight: 800; font-size: var(--step-0);
+  padding: var(--space-s) var(--space-l); cursor: pointer;
+  transition: background 0.3s ease, color 0.3s ease, transform 0.2s ease, filter 0.3s ease, box-shadow 0.3s ease;
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: 0.5em; border-radius: 0; letter-spacing: -0.02em;
+  will-change: transform;
+}
+
+button:hover { 
+  background: var(--red); color: var(--text);
+  filter: drop-shadow(0 0 12px rgba(229, 36, 33, 0.8)) blur(0.5px);
+}
+
+button:active { transform: scale(0.95); filter: blur(6px); }
+
+button:focus-visible { outline: 2px solid var(--red); outline-offset: 4px; filter: drop-shadow(0 0 15px rgba(229, 36, 33, 0.6)); }
+
+button.secondary { background: transparent; color: var(--text); border: 1px solid var(--text); }
+button.secondary:hover { background: var(--text); color: var(--surface); border-color: transparent; }
+
+pre {
+  background: rgba(23, 23, 23, 0.8); backdrop-filter: blur(10px);
+  border: 1px solid var(--line); padding: var(--space-m);
+  overflow-x: auto; font-family: var(--font-mono); font-size: var(--step--1);
+  line-height: 1.6; margin-top: var(--space-m); transition: filter 0.4s ease;
+}
+pre:hover { filter: blur(2px); }
+code .comment { color: var(--text-dim); }
+code .cmd { color: var(--text); font-weight: 700; }
+
+ul.data-list { list-style: none; margin-top: auto; }
+ul.data-list li {
+  padding: var(--space-s) 0; border-top: 1px solid var(--line);
+  font-size: var(--step-0); font-weight: 500;
+  transition: opacity 0.4s ease, transform 0.4s ease, color 0.4s ease, filter 0.4s ease;
+}
+ul.data-list li:first-child { border-top: none; }
+ul.data-list:hover li:not(:hover) { opacity: 0.25; filter: blur(6px); }
+ul.data-list li:hover { transform: translateX(10px) scale(1.02); color: var(--red); filter: blur(0px); }
+
+.tree { font-family: var(--font-mono); font-size: var(--step--1); line-height: 1.8; }
+.tree .dir { font-weight: 700; color: var(--text); }
+.tree .file { color: var(--text-dim); transition: color 0.4s ease, opacity 0.4s ease, filter 0.4s ease; }
+.tree:hover .file { opacity: 0.3; filter: blur(4px); }
+.tree div:hover .file { opacity: 1; color: var(--red); filter: blur(0px); }
+
+.slide-up {
+  opacity: 0; transform: translateY(40px) scale(0.95); filter: blur(35px);
+  transition: opacity 1.2s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 1.2s cubic-bezier(0.16, 1, 0.3, 1),
+              filter 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.slide-up.visible { opacity: 1; transform: translateY(0) scale(1); filter: blur(0px); }
+
+.stagger-1 { transition-delay: 0.1s; } .stagger-2 { transition-delay: 0.2s; }
+.stagger-3 { transition-delay: 0.3s; } .stagger-4 { transition-delay: 0.4s; }
+.stagger-5 { transition-delay: 0.5s; }
+
+.stagger-list li {
+  opacity: 0; transform: translateX(-20px); filter: blur(20px);
+  transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+              filter 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+  transition-delay: calc(0.15s * var(--i, 1));
+}
+.stagger-list.visible li { opacity: 1; transform: translateX(0); filter: blur(0px); }
+
+/* FOOTER */
+footer {
+  padding: var(--space-2xl) var(--space-l);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid var(--line);
+}
+
+#block-overlay {
+  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+  background-color: var(--red-alpha); backdrop-filter: blur(40px); -webkit-backdrop-filter: blur(40px);
+  color: var(--text); z-index: 10000; display: flex; flex-direction: column;
+  justify-content: center; align-items: center; padding: var(--space-2xl);
+  opacity: 0; pointer-events: none; filter: blur(50px); transform: scale(1.1);
+  transition: transform 0.8s cubic-bezier(0.85, 0, 0.15, 1),
+              filter 0.8s cubic-bezier(0.85, 0, 0.15, 1), opacity 0.8s ease;
+}
+
+#block-overlay.active { opacity: 1; pointer-events: all; transform: scale(1); filter: blur(0px); }
+#block-overlay > * {
+  opacity: 0; transform: translateY(30px) scale(1.2); filter: blur(40px);
+  transition: opacity 1s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 1s cubic-bezier(0.16, 1, 0.3, 1), filter 1s cubic-bezier(0.16, 1, 0.3, 1);
+}
+#block-overlay.active > * { opacity: 1; transform: translateY(0) scale(1); filter: blur(0px); }
+
+#block-overlay.active > :nth-child(1) { transition-delay: 0.3s; }
+#block-overlay.active > :nth-child(2) { transition-delay: 0.4s; }
+#block-overlay.active > :nth-child(3) { transition-delay: 0.5s; }
+#block-overlay.active > :nth-child(4) { transition-delay: 0.6s; }
+
+#block-overlay h1 { font-size: clamp(4rem, 15vw, 12rem); text-align: center; line-height: 0.85; margin-bottom: var(--space-xl); color: #FFFFFF; text-shadow: 0 0 30px rgba(255,255,255,0.5); }
+#block-overlay .timer { font-family: var(--font-mono); font-size: var(--step-6); font-weight: 700; letter-spacing: -0.05em; margin-bottom: var(--space-2xl); color: #FFFFFF; animation: breathingBlur 2s infinite alternate ease-in-out; }
+#block-overlay .actions { display: flex; gap: var(--space-m); }
+#block-overlay button { background: var(--surface); color: var(--text); font-size: var(--step-1); }
+#block-overlay button:hover { background: #FFFFFF; color: var(--red); }
+#block-overlay button.ghost { background: transparent; color: #FFFFFF; border: 1px solid #FFFFFF; }
+#block-overlay button.ghost:hover { background: #FFFFFF; color: var(--red); }
+
+</style>
+</head>
+<body>
+
+<div class="noise-overlay"></div>
+<div class="top-red-light"></div>
+<div id="cursor-blur"></div>
+
+<div class="wrapper">
+  
+  <header class="masthead">
+    <div class="mono uppercase" style="letter-spacing: -0.05em; font-weight: 800;">FocusOverlay<span class="red">.</span></div>
+    <div class="mono dim">v1.0.0 / macOS 14+</div>
+  </header>
+
+  <!-- HERO -->
+  <main class="grid">
+    <div class="cell col-8" style="padding-top: var(--space-3xl); padding-bottom: var(--space-3xl);">
+      <h1 class="slide-up" style="margin-bottom: var(--space-l);">Focus<br>Overlay.</h1>
+      <p class="slide-up stagger-1" style="font-size: var(--step-2); max-width: 24ch; color: var(--text-dim); line-height: 1.2;">
+        A strict macOS utility that enforces attention management by cutting off distracting applications.
+      </p>
+      
+      <div class="slide-up stagger-2" style="margin-top: var(--space-2xl);">
+        <button id="trigger-demo" class="magnetic-btn">Trigger Interruption</button>
+      </div>
+    </div>
+    <div class="cell col-4" style="background: rgba(23, 23, 23, 0.4); justify-content: flex-end; backdrop-filter: blur(10px);">
+      <div class="slide-up stagger-3">
+        <p class="mono dim" style="margin-bottom: var(--space-s);">// Core Directive</p>
+        <p style="font-size: var(--step-1); font-weight: 500;">
+          FocusOverlay is a lightweight macOS menu bar app. It keeps a searchable list of installed applications, lets you mark any as blocked, and throws a full-screen overlay on top of them when they become frontmost.
+        </p>
+      </div>
+    </div>
+  </main>
+
+  <!-- WHAT IT DOES -->
+  <section class="grid">
+    <div class="cell col-12 slide-up">
+      <h2 style="margin-bottom: var(--space-xs);">What it does</h2>
+      <p class="mono dim">Capabilities & Protocols</p>
+    </div>
+    
+    <div class="cell col-4">
+      <span class="running-number slide-up">01</span>
+      <h3 class="slide-up stagger-1" style="margin-bottom: var(--space-l);">System</h3>
+      <ul class="data-list stagger-list slide-up stagger-2">
+        <li style="--i: 1">Runs as a menu bar extra (LSUIElement) instead of a normal dock app</li>
+        <li style="--i: 2">Indexes standard application directories automatically</li>
+        <li style="--i: 3">Persists blocked bundle IDs securely in system UserDefaults</li>
+      </ul>
+    </div>
+    <div class="cell col-4">
+      <span class="running-number slide-up stagger-1">02</span>
+      <h3 class="slide-up stagger-2" style="margin-bottom: var(--space-l);">Control</h3>
+      <ul class="data-list stagger-list slide-up stagger-3">
+        <li style="--i: 1">Real-time search, filter, block, unblock capabilities</li>
+        <li style="--i: 2">Bulk-update functionality for rapid visibility status changes</li>
+        <li style="--i: 3">Configurable Pomodoro methodology (Focus, Breaks)</li>
+      </ul>
+    </div>
+    <div class="cell col-4">
+      <span class="running-number slide-up stagger-2">03</span>
+      <h3 class="slide-up stagger-3" style="margin-bottom: var(--space-l);">Enforcement</h3>
+      <ul class="data-list stagger-list slide-up stagger-4">
+        <li style="--i: 1">Full-screen visual overlay deployed on every connected display</li>
+        <li style="--i: 2">Timer state is directly reflected on the interruption overlay</li>
+        <li style="--i: 3">Forces an absolute choice: Quit or Jump back instantly</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- HOW TO USE & LIMITATIONS -->
+  <section class="grid">
+    <div class="cell col-6" style="background: rgba(23, 23, 23, 0.4); backdrop-filter: blur(10px);">
+      <h2 class="slide-up" style="margin-bottom: var(--space-l);">How to use it</h2>
+      <ul class="data-list stagger-list slide-up stagger-1">
+        <li style="--i: 1"><span class="mono red" style="margin-right: 1ch;">01.</span> Launch FocusOverlay.</li>
+        <li style="--i: 2"><span class="mono red" style="margin-right: 1ch;">02.</span> Open the menu bar icon.</li>
+        <li style="--i: 3"><span class="mono red" style="margin-right: 1ch;">03.</span> Search for an app by name or bundle ID.</li>
+        <li style="--i: 4"><span class="mono red" style="margin-right: 1ch;">04.</span> Toggle apps into the blocked list.</li>
+        <li style="--i: 5"><span class="mono red" style="margin-right: 1ch;">05.</span> Start the timer for visual enforcement.</li>
+        <li style="--i: 6"><span class="mono red" style="margin-right: 1ch;">06.</span> Switch into a blocked app to trigger the overlay.</li>
+      </ul>
+    </div>
+    
+    <div class="cell col-6">
+      <h2 class="slide-up" style="margin-bottom: var(--space-l);">Implementation Notes</h2>
+      <div class="slide-up stagger-1">
+        <p style="margin-bottom: var(--space-m);">
+          Blocked apps are identified purely by their <span class="mono dim">Bundle ID</span>. The installed-app index scans top-level <span class="mono dim">.app</span> bundles in standard application folders.
+        </p>
+        <p style="margin-bottom: var(--space-m);">
+          The overlay utilizes borderless windows at the <span class="mono dim">.screenSaver</span> level, ensuring it sits structurally above all regular application windows.
+        </p>
+        <h3 style="margin: var(--space-xl) 0 var(--space-s); font-size: var(--step-1);">Current Limitations</h3>
+        <p class="dim">
+          This project focuses entirely on <em>interruption</em>, not hard system-level enforcement. A blocked app can still be reopened unless you keep it on the blocked list and let the overlay catch it again.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ARCHITECTURE & CODE -->
+  <section class="grid">
+    <div class="cell col-6" style="position: relative; z-index: 1;">
+      <div class="void-blur-orb" aria-hidden="true"></div>
+      
+      <div>
+        <h2 class="slide-up" style="margin-bottom: var(--space-2xl);">Project Structure</h2>
+        <div class="tree slide-up stagger-1">
+          <div><span class="dir">Package.swift</span></div>
+          <div><span class="dir">Sources/FocusOverlay/</span></div>
+          <div style="padding-left: 1ch;">├─ <span class="file">AppCatalog.swift</span> <span class="dim"># Discovery</span></div>
+          <div style="padding-left: 1ch;">├─ <span class="file">AppModel.swift</span> <span class="dim"># Composition</span></div>
+          <div style="padding-left: 1ch;">├─ <span class="file">BlockedAppsStore.swift</span> <span class="dim"># Persistence</span></div>
+          <div style="padding-left: 1ch;">├─ <span class="file">FocusOverlayApp.swift</span> <span class="dim"># Entry</span></div>
+          <div style="padding-left: 1ch;">├─ <span class="file">MenuContentView.swift</span> <span class="dim"># Main UI</span></div>
+          <div style="padding-left: 1ch;">├─ <span class="file">OverlayManager.swift</span> <span class="dim"># Monitoring</span></div>
+          <div style="padding-left: 1ch;">├─ <span class="file">OverlayView.swift</span> <span class="dim"># Blocking UI</span></div>
+          <div style="padding-left: 1ch;">├─ <span class="file">PomodoroTimer.swift</span> <span class="dim"># Logic</span></div>
+          <div style="padding-left: 1ch;">└─ <span class="dir">Resources/</span> <span class="dim"># Bundled fonts</span></div>
+        </div>
+      </div>
+      
+      <div style="margin-top: auto; padding-top: var(--space-3xl);">
+        <h3 class="slide-up stagger-3" style="font-size: var(--step-1); margin-bottom: var(--space-xs);">Build a Clickable .app</h3>
+<pre class="slide-up stagger-4"><code><span class="comment"># Package debug build into a local app bundle</span>
+<span class="cmd">./build_clickable_app.sh</span>
+
+<span class="comment"># Standard development commands</span>
+<span class="cmd">swift run FocusOverlay</span></code></pre>
+      </div>
+    </div>
+    
+    <div class="cell col-6" style="background: rgba(23, 23, 23, 0.4); backdrop-filter: blur(10px);">
+      <div class="slide-up">
+        <h2 style="margin-bottom: var(--space-s);">Requirements</h2>
+        <p style="margin-bottom: var(--space-xl); font-size: var(--step-0);" class="dim">
+          macOS 14+ / Swift 5.10+ / Xcode Command Line Tools.
+        </p>
+      </div>
+
+      <div style="margin-top: auto; padding-top: var(--space-3xl);">
+        <h3 class="slide-up stagger-1" style="font-size: var(--step-1); margin-bottom: var(--space-xs);">Run Locally</h3>
+<pre class="slide-up stagger-2"><code><span class="comment"># Build and launch the menu bar app</span>
+<span class="cmd">./run_focus_overlay.sh</span>
+
+<span class="comment"># Stop execution</span>
+<span class="cmd">./stop_focus_overlay.sh</span>
+
+<span class="comment"># Or build manually with SwiftPM</span>
+<span class="cmd">swift build</span>
+<span class="cmd">./.build/debug/FocusOverlay</span></code></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="slide-up">
+    <div class="mono dim">© 2026 Strict Systems</div>
+    <div class="mono">
+      <a href="#" style="color: var(--text); text-decoration: none; margin-right: var(--space-m); transition: filter 0.3s ease;" onmouseover="this.style.filter='blur(2px)'" onmouseout="this.style.filter='blur(0)'">GitHub</a>
+      <a href="#" style="color: var(--text); text-decoration: none; transition: filter 0.3s ease;" onmouseover="this.style.filter='blur(2px)'" onmouseout="this.style.filter='blur(0)'">Documentation</a>
+    </div>
+  </footer>
+
+</div> <!-- End Wrapper -->
+
+<!-- THE BLURRY THING: Monumental Frosted Overlay -->
+<div id="block-overlay" aria-hidden="true" tabindex="-1">
+  <div class="mono uppercase">
+    System Intercept // Application Blocked
+  </div>
+  
+  <h1>FOCUS<br>SESSION</h1>
+  
+  <div class="timer" id="demo-timer" aria-live="polite">25:00</div>
+  
+  <div class="actions">
+    <button id="dismiss-demo" class="magnetic-btn">QUIT BLOCKED APP</button>
+    <button id="dismiss-demo-alt" class="ghost magnetic-btn">JUMP PREVIOUS</button>
+  </div>
+</div>
+
+<script>
+  // Intersection Observer for the blurred Slide-Up Reveals
+  const observerOptions = { root: null, rootMargin: '0px', threshold: 0.15 };
+  const observer = new IntersectionObserver((entries, observer) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+        observer.unobserve(entry.target);
+      }
+    });
+  }, observerOptions);
+
+  document.querySelectorAll('.slide-up:not(.stagger-list)').forEach(el => observer.observe(el));
+  document.querySelectorAll('.stagger-list').forEach(el => observer.observe(el));
+
+  // Dynamic Mouse Tracking Orb
+  const cursorBlur = document.getElementById('cursor-blur');
+  let isMouseMoving = false;
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isMouseMoving) {
+      cursorBlur.style.opacity = '0.25'; // Reveal on first move
+      isMouseMoving = true;
+    }
+    cursorBlur.style.left = `${e.clientX}px`;
+    cursorBlur.style.top = `${e.clientY}px`;
+  });
+
+  document.addEventListener('mouseleave', () => {
+    cursorBlur.style.opacity = '0';
+    isMouseMoving = false;
+  });
+
+  // Magnetic Buttons
+  document.querySelectorAll('.magnetic-btn').forEach(btn => {
+    btn.addEventListener('mousemove', (e) => {
+      const rect = btn.getBoundingClientRect();
+      const x = e.clientX - rect.left - rect.width / 2;
+      const y = e.clientY - rect.top - rect.height / 2;
+      btn.style.transform = `translate(${x * 0.2}px, ${y * 0.2}px) scale(1.05)`;
+    });
+    
+    btn.addEventListener('mouseleave', () => {
+      btn.style.transform = `translate(0px, 0px) scale(1)`;
+    });
+  });
+
+  // Frosted Overlay Logic
+  const triggerBtn = document.getElementById('trigger-demo');
+  const overlay = document.getElementById('block-overlay');
+  const dismissBtns =[document.getElementById('dismiss-demo'), document.getElementById('dismiss-demo-alt')];
+  const timerDisplay = document.getElementById('demo-timer');
+  let timerInterval;
+
+  triggerBtn.addEventListener('click', () => {
+    overlay.classList.add('active');
+    overlay.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden'; 
+    cursorBlur.style.opacity = '0'; 
+    
+    setTimeout(() => dismissBtns[0].focus(), 800); 
+    
+    let time = 25 * 60;
+    timerInterval = setInterval(() => {
+      time--;
+      let m = Math.floor(time / 60).toString().padStart(2, '0');
+      let s = (time % 60).toString().padStart(2, '0');
+      timerDisplay.innerText = `${m}:${s}`;
+    }, 1000);
+  });
+
+  dismissBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      overlay.classList.remove('active');
+      overlay.setAttribute('aria-hidden', 'true');
+      document.body.style.overflow = '';
+      if (isMouseMoving) cursorBlur.style.opacity = '0.25';
+      
+      clearInterval(timerInterval);
+      timerDisplay.innerText = "25:00";
+      
+      triggerBtn.focus();
+    });
+  });
+</script>
+
+</body>
+</html>
